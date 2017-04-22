@@ -11,3 +11,13 @@ will receive the RTP packet containing JPEG frames, decompress the frames, and r
 
 SERVER: While server is in playing state, it will periodically grab a stored JPEG frame and send the frame via
 RTP via UDP.
+
+To run:
+    1. startup server
+    2. startup client
+    3. press "Setup" on client window
+    4. This initializes connection with server
+    5. Server sends list of files in directory to client
+    6. Files are displayed on client side via labels
+    7. Enter media file name in entry box and press "Click when done" when done...naturally
+    8. .....
