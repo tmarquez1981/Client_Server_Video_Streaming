@@ -5,20 +5,16 @@
 # Requests video from server
 # Must implmenet SETUP, PLAY, PAUSE, TEARDDOWN using RTSP
 
-import numpy as np
-import cv2
 from PIL import Image as img
 from PIL import ImageTk
 from tkinter import *
-import tkinter as tk
 import pickle
 import socket
-import getopt
-import sys
 from tkinter import messagebox
 from tkinter import ttk
 import BasicPacket
 import threading
+import time
 
 windowWidth = 600
 windowHeight = 600
@@ -34,6 +30,14 @@ class Connection:
         self.s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.s.bind((self.host, self.listeningPort))
+
+    def catchAll(self):
+        while True:
+            try:
+                self.s.settimeout(0.5)
+                self.s.recvfrom(4096)
+            except socket.timeout:
+                break
 
     # send function sends a message
     def send(self, message, address = None):
@@ -152,15 +156,9 @@ class Application:
     # TODO: function should have a an argument
     # from this array, a photoImage should be created
     # Currently,
-    def display(self, data):
-        myImage = img.new("RGB",(len(data[0]),len(data)))
-        for y in range(0,len(data)):
-            for x in range(0, len(data[y])):
-                myImage.putpixel((x,y),tuple(data[y][x]))
-        finalImage = ImageTk.PhotoImage(myImage)
+    def display(self, finalImage):
         self.mediaLabel.config( image = finalImage )
         self.mediaLabel.image=finalImage
-        self.mediaLabel.pack(side=TOP, fill="both", expand="yes")
 
     # Performs action after play button is pressed
     # Sends basicPacket
@@ -175,16 +173,25 @@ class Application:
         # This should loop until at least a frame is done processing
         # Currently, it (theoretically) loops until pause is called, regardless if the frame is done processing or not. 
         threading._start_new_thread(self.stream, tuple())
+        self.mediaLabel.pack(side=TOP, fill="both", expand="yes")
 
 
         print("play")
         #cv2.destroyWindow("VIDEO")
 
     def stream(self):
+
+        pickledMsg, address = self.conn.receive()
+        framerate = pickle.loads(pickledMsg)
+
+
         pickledMsg, address = self.conn.receive()
         message = pickle.loads(pickledMsg)
         displayed=False
-        while not self.pause:
+        frames=[]
+        timestamps=[]
+        lastframe=""
+        while not self.pause and not(message=="END"):
             if message == "FEND":
                 pickledMsg, address = self.conn.receive()
                 message = pickle.loads(pickledMsg)
@@ -193,18 +200,67 @@ class Application:
                 frame.append([])
             pickledMsg, address = self.conn.receive()
             message = pickle.loads(pickledMsg) # message schema = payload(0), seqno(1), timeStamp(2), SSRC(3), video frame(4)
-            while not( message == "FEND") and len(message)>2:
+
+            while not(message=="END" or message=="FEND") and len(message)>2:
                 self.seqno = message[0][1]
-                self.timestamp = message[0][2]
                 self.ssrc = message[0][3]
                 frame[int(message[1])] = message[2]
+                timestamps.append(message[0][2])
                 pickledMsg, address = self.conn.receive()
                 message = pickle.loads(pickledMsg)
-            #threading._start_new_thread(self.display,tuple([frame]))
-            threading._start_new_thread(self.display,tuple([frame]))
+            if not(lastframe=="") and self.containsBlank(frame):
+                lastframe=self.stitch(frame,lastframe)
+                frames.append(self.convertToPhotoImage(lastframe))
+            else:
+                lastframe = frame
+                frames.append(self.convertToPhotoImage(lastframe))
+            if(len(frames)>10) and not displayed:
+                threading._start_new_thread(self.displaythread,tuple([frames, timestamps, framerate]))
+                displayed = True
+
+        self.conn.catchAll()
+        if not displayed:
+            threading._start_new_thread(self.displaythread, tuple([frames, timestamps, framerate]))
+            displayed = True
+
+    def stitch(self, one, two):
+        for i in range(0, len(one)):
+            if one[i]==[]:
+                one[i]=two[i]
+        return one
+
+    def containsBlank(self, array):
+        for i in range(0, len(array)):
+            if array[i]==[]:
+                return True
+        return False
+
+    def convertToPhotoImage(self, data):
+        myImage = img.new("RGB",(len(data[0]),len(data)))
+        for y in range(0,len(data)):
+            for x in range(0, len(data[y])):
+                myImage.putpixel((x,y),tuple(data[y][x]))
+        finalImage = ImageTk.PhotoImage(myImage)
+        return finalImage
+
+    #function to be called from another thread; displays frames 1 at a time according to framerate
+    def displaythread(self, frames, timestamps, framerate):
+        while not self.pause:
+            if len(frames)>0:
+                frame = frames[0]
+                frames.remove(frame)
+                timestamp=timestamps[0]
+                timestamps.remove(timestamp)
+                self.timestamp=timestamp
+                self.display(frame)
+                time.sleep(framerate)
 
 
     def pause(self):
+        self.pause=True
+        packet = BasicPacket.BasicPacket("pause", self.timestamp)
+        packet=packet.makePkt()
+        self.conn.send(packet)
         print("pause")
 
     def teardown(self):

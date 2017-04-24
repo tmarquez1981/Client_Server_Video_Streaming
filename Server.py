@@ -5,13 +5,10 @@
 # While server is in playing state, server
 # periodically stores a JPEG frame and sends via UDP
 
-import sys
 import socket
 import random
 import pickle
-import sys
 import os
-import filecmp
 import cv2
 import time
 
@@ -41,7 +38,8 @@ class Server:
         self.file = ""
         self.ssrc = random.randint(0, 100)
         self.seqn = 0
-        self.pause = False # variable used to interrupt streaming
+        self.paused = False # variable used to interrupt streaming
+        self.first=True
         self.state = {
             "setup": self.setup,
             "play": self.play,
@@ -66,7 +64,7 @@ class Server:
 
                 while True:
                     done = self.handleState(self.currentState)
-                    if not done:
+                    if done:
                         break
 
             except (KeyboardInterrupt, SystemExit):
@@ -84,7 +82,7 @@ class Server:
             return True
 
         if state == "pause":
-            self.pause()
+            self.pause(self.timestamp)
             return True
 
         if state == "teardown":
@@ -95,12 +93,9 @@ class Server:
     # Handles the setup call from the client
     def setup(self):
         dirName = os.listdir(os.getcwd())
-        self.send(dirName, self.destAddress) # send list of files in directory to client TODO: Will have to add the encoding
-        pickledMsg, self.destAddress = self.receive() # receives filename and if encoding is ok for client
+        self.send(dirName, self.destAddress) # send list of files in directory to client
+        pickledMsg, self.destAddress = self.receive() # receives filename
         fileName = pickle.loads(pickledMsg)
-        #todo: need to implement tag for encoding (maybe?)
-        #if ok:
-
         self.file = fileName
         self.currentState = "play"
 
@@ -120,40 +115,47 @@ class Server:
         # for processing on the client side
         cap = cv2.VideoCapture()
         cap.open(self.file)
-        framerate = (1.0/float(cap.get(cv2.CAP_PROP_FPS)))
-        while not self.pause:
+        framerate = (10.0/float(cap.get(cv2.CAP_PROP_FPS)))
+        self.send(framerate,self.destAddress)
+        while not self.paused:
             # opens video file
             ret, frame = cap.read()
+            if frame == None:
+                break
             timeStamp = cap.get(cv2.CAP_PROP_POS_MSEC) # returns current timestamp in video
-            self.send_rows(frame,timeStamp, framerate)
-            time.sleep(framerate)
+            if self.first:
+                self.first=False
+                self.timestamp=timeStamp
+            if(timeStamp>=self.timestamp):
+                self.send_rows(frame,timeStamp, framerate)
 
         print("play")
 
     def send_rows(self, data, timestamp, framerate):
         self.send( [ len(data), len(data[0]) ] , self.destAddress)
-        sleeprate = (framerate/float(len(data)))/10.0
+        sleeprate = (framerate/float(len(data)))/100.0
         for rown in range(0, len(data)):
             rtpPacket = RTP_Packet.RTP_Packet("MJPG", self.seqn, timestamp, self.ssrc)
             rtpPacket = rtpPacket.makeRTP_Pkt()
             finalPacket = rtpPacket , rown , data[rown]
             self.send(finalPacket,self.destAddress)
-            time.sleep(sleeprate)
+        print("sent a frame")
         self.send("FEND", self.destAddress)
 
 
-
-     # function that will be spawned off a thread to listen for streaming interrupts from client
+    # function that will be spawned off a thread to listen for streaming interrupts from client
     def listening(self):
         pickledMsg, self.destAddress = self.receive()
         message = pickle.loads(pickledMsg) # message scheme = msgType, timestamp
         msgType = message[0]
         timeStamp = message[1]
         if msgType == "pause":
-            self.pause = True
+            self.pause(timeStamp)
             return
 
-    def pause(self):
+    def pause(self, timeStamp):
+        self.paused = True
+        self.timestamp=timeStamp #will begin sending from time paused
         print("pause")
 
     def teardown(self):
@@ -161,7 +163,6 @@ class Server:
 
     def send(self, packet, address):
         pickledMsg = pickle.dumps(packet)
-        #print(len(pickledMsg))
         self.sock.sendto(pickledMsg, address)
 
 if __name__ == "__main__":
