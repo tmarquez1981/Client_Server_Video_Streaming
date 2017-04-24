@@ -105,8 +105,8 @@ class Server:
     def play(self):
 
         # The listening thread
-        thread = myThread(self)
-        thread.start()
+        listeningThread = myThread(self)
+        listeningThread.start()
 
         # TODO: Theoretically, this should stream a video file
         # and stop at an interrupt from the client
@@ -143,7 +143,7 @@ class Server:
         self.send("FEND", self.destAddress)
 
 
-    # function that will be spawned off a thread to listen for streaming interrupts from client
+    # function that will spawn off a thread to listen for streaming interrupts from client
     def listening(self):
         pickledMsg, self.destAddress = self.receive()
         message = pickle.loads(pickledMsg) # message scheme = msgType, timestamp
@@ -152,6 +152,7 @@ class Server:
         if msgType == "pause":
             self.pause(timeStamp)
             return
+
 
     def pause(self, timeStamp):
         self.paused = True

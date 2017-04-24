@@ -186,6 +186,7 @@ class Application:
         print("play")
         #cv2.destroyWindow("VIDEO")
 
+    # function that takes care of the frame streaming
     def stream(self):
 
         pickledMsg, address = self.conn.receive()
