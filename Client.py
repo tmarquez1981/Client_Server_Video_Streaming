@@ -3,7 +3,7 @@
 # Client for Video streaming
 # Uses RTSP to control server
 # Requests video from server
-# Must implmenet SETUP, PLAY, PAUSE, TEARDDOWN using RTSP
+# Must implment SETUP, PLAY, PAUSE, TEARDDOWN using RTSP
 
 import numpy as np
 import cv2
@@ -69,9 +69,9 @@ class Application:
         self.frame.pack(fill = "both", expand = "yes")
         self.toolbar = Frame(self.frame, bg = "blue")
         self.setupButton = Button(self.toolbar, text = "Setup", command = self.setup)
-        self.playButton = Button(self.toolbar, text = "Play", command = self.play)
-        self.pauseButton = Button(self.toolbar, text = "Pause", command = self.pause)
-        self.teardownButton = Button(self.toolbar, text  ="TearDown", command = self.teardown)
+        self.playButton = Button(self.toolbar, text = "Play", command = self.play, state = DISABLED) # enable after setup
+        self.pauseButton = Button(self.toolbar, text = "Pause", command = self.pause, state = DISABLED) # enable after setup
+        self.teardownButton = Button(self.toolbar, text  ="TearDown", command = self.teardown, state = DISABLED) # enable after setup
         self.setupButton.pack(side = LEFT, padx = 1, pady = 2)
         self.playButton.pack(side = LEFT, padx=1, pady=2)
         self.pauseButton.pack(side = LEFT, padx=1, pady=2)
@@ -84,6 +84,7 @@ class Application:
         # Todo: Need to change this variable as the status changes
         # Todo: Should display the current state of the video
         # Note: Can use progressbar here instead
+        '''
         self.statusBarText = StringVar()
         self.statusBarText.set("Status bar...")
 
@@ -91,6 +92,10 @@ class Application:
         self.statusLabel = Label(self.statusBar, fg="green", textvariable = self.statusBarText, relief = SUNKEN, anchor = W)
         self.statusLabel.pack(fill = X)
         self.statusBar.pack(side = BOTTOM, fill = X)
+        '''
+        self.max = 0
+        self.pb = ttk.Progressbar(self.frame2, orient="horizontal")
+        self.pb.pack(side=BOTTOM, fill=X)
 
         # random declaration of widget so it can be used in other functions
         self.optionEntry = Entry(self.frame, bd = 2)
@@ -144,6 +149,11 @@ class Application:
         if not found:
             messagebox.showinfo("Error", "You entered an invalid file name. Please try again")
 
+        # enable "play", "pause", and "teardown" buttons
+        self.playButton(state = NORMAL)
+        self.pauseButton(state = NORMAL)
+        self.teardownButton(state = NORMAL)
+
     # displays image
     # should receive a byte array and display
     # TODO: function should have a an argument
@@ -165,7 +175,7 @@ class Application:
 
         # TODO: Given the fact that I can not get video files to work, this will have to be tested
         # This should loop until at least a frame is done processing
-        # Currently, it (theoretically) loops until pause is called, regardless if the frame is done processing or not. 
+        # Currently, it (theoretically) loops until pause is called, regardless if the frame is done processing or not.
         while not self.pause:
             pickledMsg, address = self.conn.receive()
             message = pickle.loads(pickledMsg) # message schema = payload(0), seqno(1), timeStamp(2), SSRC(3), video frame(4)

@@ -107,8 +107,8 @@ class Server:
     def play(self):
 
         # The listening thread
-        thread = myThread()
-        thread.start()
+        listeningThread = myThread()
+        listeningThread.start()
 
         # TODO: Theoretically, this should stream a video file
         # and stop at an interrupt from the client
@@ -137,6 +137,7 @@ class Server:
         timeStamp = message[1]
         if msgType == "pause":
             self.pause = True
+            self.currentState = "pause"
             return
 
     def pause(self):
