@@ -7,9 +7,10 @@
 
 import numpy as np
 import cv2
+from PIL import Image as img
+from PIL import ImageTk
 from tkinter import *
 import tkinter as tk
-from PIL import Image
 import pickle
 import socket
 import getopt
@@ -17,6 +18,7 @@ import sys
 from tkinter import messagebox
 from tkinter import ttk
 import BasicPacket
+import threading
 
 windowWidth = 600
 windowHeight = 600
@@ -80,6 +82,7 @@ class Application:
 
         self.frame2 = LabelFrame(self.frame, padx = 2, pady = 2)
         self.frame2.pack(side = BOTTOM, fill = "both", expand = "yes")
+        self.mediaLabel = Label(self.frame2)
 
         # Todo: Need to change this variable as the status changes
         # Todo: Should display the current state of the video
@@ -149,36 +152,57 @@ class Application:
     # TODO: function should have a an argument
     # from this array, a photoImage should be created
     # Currently,
-    def display(self, byteArray):
-        myImage = PhotoImage(data = byteArray) # I'm not sure if this works
-        self.mediaLabel = Label(self.frame2, data = byteArray) # This either
-        self.mediaLabel.image = myImage
+    def display(self, data):
+        myImage = img.new("RGB",(len(data[0]),len(data)))
+        for y in range(0,len(data)):
+            for x in range(0, len(data[y])):
+                myImage.putpixel((x,y),tuple(data[y][x]))
+        finalImage = ImageTk.PhotoImage(myImage)
+        self.mediaLabel.config( image = finalImage )
+        self.mediaLabel.image=finalImage
         self.mediaLabel.pack(side=TOP, fill="both", expand="yes")
 
     # Performs action after play button is pressed
     # Sends basicPacket
     # Todo: the following functions
     def play(self):
-        packet = BasicPacket("play", self.timestamp)
-        packet.makePkt()
+        packet = BasicPacket.BasicPacket("play", self.timestamp)
+        packet=packet.makePkt()
         self.conn.send(packet)
+        #cv2.namedWindow,tuple(["VIDEO", cv2.WINDOW_FULLSCREEN])
 
         # TODO: Given the fact that I can not get video files to work, this will have to be tested
         # This should loop until at least a frame is done processing
         # Currently, it (theoretically) loops until pause is called, regardless if the frame is done processing or not. 
-        while not self.pause:
-            pickledMsg, address = self.conn.receive()
-            message = pickle.loads(pickledMsg) # message schema = payload(0), seqno(1), timeStamp(2), SSRC(3), video frame(4)
-
-            self.seqno = message[1]
-            self.timestamp = message[2]
-            self.ssrc = message[3]
-            frame = message[4]
-
-            self.display(frame)
+        threading._start_new_thread(self.stream, tuple())
 
 
         print("play")
+        #cv2.destroyWindow("VIDEO")
+
+    def stream(self):
+        pickledMsg, address = self.conn.receive()
+        message = pickle.loads(pickledMsg)
+        displayed=False
+        while not self.pause:
+            if message == "FEND":
+                pickledMsg, address = self.conn.receive()
+                message = pickle.loads(pickledMsg)
+            frame=[]
+            for i in range(0,message[0]):
+                frame.append([])
+            pickledMsg, address = self.conn.receive()
+            message = pickle.loads(pickledMsg) # message schema = payload(0), seqno(1), timeStamp(2), SSRC(3), video frame(4)
+            while not( message == "FEND") and len(message)>2:
+                self.seqno = message[0][1]
+                self.timestamp = message[0][2]
+                self.ssrc = message[0][3]
+                frame[int(message[1])] = message[2]
+                pickledMsg, address = self.conn.receive()
+                message = pickle.loads(pickledMsg)
+            #threading._start_new_thread(self.display,tuple([frame]))
+            threading._start_new_thread(self.display,tuple([frame]))
+
 
     def pause(self):
         print("pause")

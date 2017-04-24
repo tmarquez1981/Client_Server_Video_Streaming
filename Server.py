@@ -13,18 +13,21 @@ import sys
 import os
 import filecmp
 import cv2
+import time
+
 import RTP_Packet
 import threading
 
 # Thread class
 # Listen for interrupts from client
 class myThread (threading.Thread):
-    def __init__(self):
+    def __init__(self, mainhandle):
         threading.Thread.__init__(self)
+        self.mainhandle=mainhandle
 
     def run(self):
         print("Starting thread")
-        Server.listening()
+        self.mainhandle.listening()
 
 class Server:
     def __init__(self, listenPort = 33122, debug=False):
@@ -107,7 +110,7 @@ class Server:
     def play(self):
 
         # The listening thread
-        thread = myThread()
+        thread = myThread(self)
         thread.start()
 
         # TODO: Theoretically, this should stream a video file
@@ -115,18 +118,29 @@ class Server:
         # Note: this has not been tested and more than likely needs some work.
         # I believe video frames need to be converted to byte arrays
         # for processing on the client side
+        cap = cv2.VideoCapture()
+        cap.open(self.file)
+        framerate = (1.0/float(cap.get(cv2.CAP_PROP_FPS)))
         while not self.pause:
             # opens video file
-            cap = cv2.VideoCapture(self.file)
             ret, frame = cap.read()
-            timeStamp = cap.get(cv2.CAP_PROP_MSEC) # returns current timestamp in video
-            payload = "MJPG"
-            rtpPacket = RTP_Packet(payload, self.segn, timeStamp, self.ssrc)
-            rtpPacket.makeRTP_Packet()
-            completePacket = rtpPacket, frame # send RTP packet and video frame
-            self.send(completePacket, self.destAddress)
+            timeStamp = cap.get(cv2.CAP_PROP_POS_MSEC) # returns current timestamp in video
+            self.send_rows(frame,timeStamp, framerate)
+            time.sleep(framerate)
 
         print("play")
+
+    def send_rows(self, data, timestamp, framerate):
+        self.send( [ len(data), len(data[0]) ] , self.destAddress)
+        sleeprate = (framerate/float(len(data)))/10.0
+        for rown in range(0, len(data)):
+            rtpPacket = RTP_Packet.RTP_Packet("MJPG", self.seqn, timestamp, self.ssrc)
+            rtpPacket = rtpPacket.makeRTP_Pkt()
+            finalPacket = rtpPacket , rown , data[rown]
+            self.send(finalPacket,self.destAddress)
+            time.sleep(sleeprate)
+        self.send("FEND", self.destAddress)
+
 
 
      # function that will be spawned off a thread to listen for streaming interrupts from client
@@ -147,8 +161,10 @@ class Server:
 
     def send(self, packet, address):
         pickledMsg = pickle.dumps(packet)
+        #print(len(pickledMsg))
         self.sock.sendto(pickledMsg, address)
 
 if __name__ == "__main__":
     s = Server()
     s.start()
+
