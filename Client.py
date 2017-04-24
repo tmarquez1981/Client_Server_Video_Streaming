@@ -62,7 +62,7 @@ class Application:
         self.ssrc = 0 # this may not be needed. It would be nice to ensure server was sending to the right client
                       # but it is really not needed given the scope of this project.
 
-        self.pause = False # variable used to interrupt playing
+        self.paused = False # variable used to interrupt playing
 
         # some styling
         style = ttk.Style()
@@ -191,7 +191,7 @@ class Application:
         frames=[]
         timestamps=[]
         lastframe=""
-        while not self.pause and not(message=="END"):
+        while not self.paused and not(message=="END"):
             if message == "FEND":
                 pickledMsg, address = self.conn.receive()
                 message = pickle.loads(pickledMsg)
@@ -201,7 +201,7 @@ class Application:
             pickledMsg, address = self.conn.receive()
             message = pickle.loads(pickledMsg) # message schema = payload(0), seqno(1), timeStamp(2), SSRC(3), video frame(4)
 
-            while not(message=="END" or message=="FEND") and len(message)>2:
+            while not(message=="END" or message=="FEND") and len(message)>2 and not(self.paused):
                 self.seqno = message[0][1]
                 self.ssrc = message[0][3]
                 frame[int(message[1])] = message[2]
@@ -245,7 +245,7 @@ class Application:
 
     #function to be called from another thread; displays frames 1 at a time according to framerate
     def displaythread(self, frames, timestamps, framerate):
-        while not self.pause:
+        while not self.paused:
             if len(frames)>0:
                 frame = frames[0]
                 frames.remove(frame)
