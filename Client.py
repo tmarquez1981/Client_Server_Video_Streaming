@@ -69,11 +69,12 @@ class Application:
 
         self.frame = Frame(master, width = windowWidth, height = windowHeight)
         self.frame.pack(fill = "both", expand = "yes")
+
         self.toolbar = Frame(self.frame, bg = "blue")
-        self.setupButton = Button(self.toolbar, text = "Setup", command = self.setup)
-        self.playButton = Button(self.toolbar, text = "Play", command = self.play)
-        self.pauseButton = Button(self.toolbar, text = "Pause", command = self.pause)
-        self.teardownButton = Button(self.toolbar, text  ="TearDown", command = self.teardown)
+        self.setupButton = Button(self.toolbar, text = "Setup", command = self.setup, state = NORMAL)
+        self.playButton = Button(self.toolbar, text = "Play", command = self.play, state = DISABLED)
+        self.pauseButton = Button(self.toolbar, text = "Pause", command = self.pause, state = DISABLED)
+        self.teardownButton = Button(self.toolbar, text  ="TearDown", command = self.teardown, state = DISABLED)
         self.setupButton.pack(side = LEFT, padx = 1, pady = 2)
         self.playButton.pack(side = LEFT, padx=1, pady=2)
         self.pauseButton.pack(side = LEFT, padx=1, pady=2)
@@ -84,19 +85,16 @@ class Application:
         self.frame2.pack(side = BOTTOM, fill = "both", expand = "yes")
         self.mediaLabel = Label(self.frame2)
 
-        # Todo: Need to change this variable as the status changes
-        # Todo: Should display the current state of the video
-        # Note: Can use progressbar here instead
-        self.statusBarText = StringVar()
-        self.statusBarText.set("Status bar...")
+        self.pb = ttk.Progressbar(self.frame2, orient="horizontal", mode="indeterminate")
+        #self.pb["maximum"] = max
 
-        self.statusBar = Frame(self.frame2)
-        self.statusLabel = Label(self.statusBar, fg="green", textvariable = self.statusBarText, relief = SUNKEN, anchor = W)
-        self.statusLabel.pack(fill = X)
-        self.statusBar.pack(side = BOTTOM, fill = X)
+        self.progressLabel = Label(self.frame2, text = "Progress Bar", relief = SUNKEN, pady = 2)
+
+        self.labelPack = [] # an array of dynamic widgets that get set to forget when video is playing
 
         # random declaration of widget so it can be used in other functions
         self.optionEntry = Entry(self.frame, bd = 2)
+        self.labelPack.append(self.optionEntry)
 
     # The setup function gets the wheels turning with the server
     # It displays the files in the servers directory
@@ -104,28 +102,34 @@ class Application:
     # It asks for a file
     # If file entered is invalid, a messagebox is displayed prompting user to re-enter the file
     # If file is valid, it displays it in the window
-    # TODO: At the moment, it only displays images.
     def setup(self):
+        self.setupButton["state"] = DISABLED # disable setup button to prevent setup activation again
         self.conn.send("Setup")
         pickledMsg, address = self.conn.receive()
         message = pickle.loads(pickledMsg)
 
         fileLabel = ttk.Label(self.frame, text="List of files:")
         fileLabel.pack(side=TOP, anchor=NW)
+        self.labelPack.append(fileLabel)
 
+        # creates a list of files on server directory
+        # file names are in labels
         for fileName in message:
             self.dirList.append(fileName) # used for error checking of input for file entry
             tempName = StringVar()
             tempName.set(fileName)
             tempButton = Label(self.frame, textvariable = tempName, relief = SUNKEN)
+            self.labelPack.append(tempButton)
             tempButton.pack(side = TOP, anchor = W)
 
         optionLabel = ttk.Label(self.frame, text="Choose a file:")
         optionLabel.pack(side=TOP, anchor=NW)
+        self.labelPack.append(optionLabel)
         # optionEntry = Entry(self.frame, bd = 2)
         self.optionEntry.pack(side=TOP, anchor=W)
         okButton = Button(self.frame, text="Click when done", command=self.okButton)
         okButton.pack(side=TOP, anchor=W)
+        self.labelPack.append(okButton)
 
     # okButton checks to see if file name entered is valid
     # If it is valid, call display()
@@ -141,17 +145,27 @@ class Application:
                 self.conn.send(fileEntered) # sends the name of the chosen file to be streamed
                 found = True
                 self.path = fileName
+                # enable "play", "pause", and "teardown" buttons
+                # after valid file is entered and sent to server
+                self.playButton["state"] = NORMAL
+                self.pauseButton["state"] = NORMAL
+                self.teardownButton["state"] = NORMAL
+
+                # the following loops hides the various widgets that are not needed anymore
+                for label in self.labelPack:
+                    label.pack_forget()
+
                 break
             else:
                 found = False
         if not found:
             messagebox.showinfo("Error", "You entered an invalid file name. Please try again")
 
+
     # displays image
     # should receive a byte array and display
     # TODO: function should have a an argument
     # from this array, a photoImage should be created
-    # Currently,
     def display(self, data):
         myImage = img.new("RGB",(len(data[0]),len(data)))
         for y in range(0,len(data)):
@@ -164,8 +178,11 @@ class Application:
 
     # Performs action after play button is pressed
     # Sends basicPacket
-    # Todo: the following functions
     def play(self):
+        # display progress bar and progress label
+        self.pb.pack(side=BOTTOM, fill=X)
+        self.progressLabel.pack(side=BOTTOM)
+        self.pb.start()  # start progress bar
         packet = BasicPacket.BasicPacket("play", self.timestamp)
         packet=packet.makePkt()
         self.conn.send(packet)
@@ -176,8 +193,6 @@ class Application:
         # Currently, it (theoretically) loops until pause is called, regardless if the frame is done processing or not. 
         threading._start_new_thread(self.stream, tuple())
 
-
-        print("play")
         #cv2.destroyWindow("VIDEO")
 
     def stream(self):

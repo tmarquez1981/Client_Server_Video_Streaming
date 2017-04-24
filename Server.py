@@ -128,8 +128,6 @@ class Server:
             self.send_rows(frame,timeStamp, framerate)
             time.sleep(framerate)
 
-        print("play")
-
     def send_rows(self, data, timestamp, framerate):
         self.send( [ len(data), len(data[0]) ] , self.destAddress)
         sleeprate = (framerate/float(len(data)))/10.0
@@ -143,7 +141,7 @@ class Server:
 
 
 
-     # function that will be spawned off a thread to listen for streaming interrupts from client
+    # function that will spawn off a thread to listen for streaming interrupts from client
     def listening(self):
         pickledMsg, self.destAddress = self.receive()
         message = pickle.loads(pickledMsg) # message scheme = msgType, timestamp
