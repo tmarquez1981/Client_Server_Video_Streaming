@@ -63,6 +63,7 @@ class Application:
                       # but it is really not needed given the scope of this project.
 
         self.paused = False # variable used to interrupt playing
+        self.teardownflag = False
 
         # some styling
         style = ttk.Style()
@@ -106,6 +107,7 @@ class Application:
     # If file is valid, it displays it in the window
     # TODO: At the moment, it only displays images.
     def setup(self):
+        self.setupButton["state"] = DISABLED
         self.conn.send("Setup")
         pickledMsg, address = self.conn.receive()
         message = pickle.loads(pickledMsg)
@@ -253,7 +255,7 @@ class Application:
 
     #function to be called from another thread; displays frames 1 at a time according to framerate
     def displaythread(self, frames, timestamps, framerate):
-        while not self.paused:
+        while not self.paused and not self.teardownflag:
             if len(frames)>0:
                 frame = frames[0]
                 frames.remove(frame)
@@ -272,11 +274,15 @@ class Application:
         print("pause")
 
     def teardown(self):
-        print("teardown")
+        self.teardownflag = True
+        packet = BasicPacket.BasicPacket("teardown", self.timestamp)
+        packet=packet.makePkt()
+        self.conn.send(packet)
+        sys.exit()
 
 # hardcoded the address and port number
 destAddress = "127.0.0.1"
-destPort = 33122
+destPort = 33123
 
 
 root = Tk()

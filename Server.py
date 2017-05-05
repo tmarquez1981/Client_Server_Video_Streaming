@@ -27,7 +27,7 @@ class myThread (threading.Thread):
         self.mainhandle.listening()
 
 class Server:
-    def __init__(self, listenPort = 33122, debug=False):
+    def __init__(self, listenPort = 33123, debug=False):
         self.port = listenPort
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.debug = debug
@@ -39,6 +39,7 @@ class Server:
         self.ssrc = random.randint(0, 100)
         self.seqn = 0
         self.paused = False # variable used to interrupt streaming
+        self.teardownflag = False
         self.first=True
         self.state = {
             "setup": self.setup,
@@ -58,6 +59,7 @@ class Server:
                 print("Waiting for connection...")
 
                 pickledMsg, self.destAddress = self.receive()
+                self.sock.connect((self.destAddress))
                 message = pickle.loads(pickledMsg)
 
                 print("Connection received!")
@@ -117,7 +119,7 @@ class Server:
         cap.open(self.file)
         framerate = (10.0/float(cap.get(cv2.CAP_PROP_FPS)))
         self.send(framerate,self.destAddress)
-        while not self.paused:
+        while not self.paused and not self.teardownflag:
             # opens video file
             ret, frame = cap.read()
             if frame == None:
@@ -138,6 +140,7 @@ class Server:
             rtpPacket = RTP_Packet.RTP_Packet("MJPG", self.seqn, timestamp, self.ssrc)
             rtpPacket = rtpPacket.makeRTP_Pkt()
             finalPacket = rtpPacket , rown , data[rown]
+
             self.send(finalPacket,self.destAddress)
         print("sent a frame")
         self.send("FEND", self.destAddress)
@@ -152,6 +155,8 @@ class Server:
         if msgType == "pause":
             self.pause(timeStamp)
             return
+        if msgType == "teardown":
+            self.teardown()
 
 
     def pause(self, timeStamp):
@@ -160,11 +165,13 @@ class Server:
         print("pause")
 
     def teardown(self):
+        self.teardownflag = True
         print("teardown")
 
     def send(self, packet, address):
         pickledMsg = pickle.dumps(packet)
-        self.sock.sendto(pickledMsg, address)
+        self.sock.sendall(pickledMsg)
+        #self.sock.sendto(pickledMsg, address)
 
 if __name__ == "__main__":
     s = Server()
