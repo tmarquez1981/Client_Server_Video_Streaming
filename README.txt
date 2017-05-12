@@ -13,11 +13,15 @@ SERVER: While server is in playing state, it will periodically grab a stored JPE
 RTP via UDP.
 
 To run:
-    1. startup server
-    2. startup client
-    3. press "Setup" on client window
+    1. Startup server
+    2. Startup client
+    3. Press "Setup" on client window
     4. This initializes connection with server
     5. Server sends list of files in directory to client
     6. Files are displayed on client side via labels
     7. Enter media file name in entry box and press "Click when done" when done...naturally
-    8. .....
+    8. Press "Play" and the streaming will begin.
+    9. Press "Pause" to pause the stream
+    10. Press "Play" to continue streaming
+    11. Press "teardown" to end the stream
+

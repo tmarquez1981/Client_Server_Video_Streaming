@@ -5,29 +5,29 @@
 # While server is in playing state, server
 # periodically stores a JPEG frame and sends via UDP
 
-import sys
 import socket
 import random
 import pickle
-import sys
 import os
-import filecmp
 import cv2
+import time
+
 import RTP_Packet
 import threading
 
 # Thread class
 # Listen for interrupts from client
 class myThread (threading.Thread):
-    def __init__(self):
+    def __init__(self, mainhandle):
         threading.Thread.__init__(self)
+        self.mainhandle=mainhandle
 
     def run(self):
         print("Starting thread")
-        Server.listening()
+        self.mainhandle.listening()
 
 class Server:
-    def __init__(self, listenPort = 33122, debug=False):
+    def __init__(self, listenPort = 33123, debug=False):
         self.port = listenPort
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.debug = debug
@@ -38,7 +38,9 @@ class Server:
         self.file = ""
         self.ssrc = random.randint(0, 100)
         self.seqn = 0
-        self.pause = False # variable used to interrupt streaming
+        self.paused = False # variable used to interrupt streaming
+        self.teardownflag = False
+        self.first=True
         self.state = {
             "setup": self.setup,
             "play": self.play,
@@ -57,13 +59,14 @@ class Server:
                 print("Waiting for connection...")
 
                 pickledMsg, self.destAddress = self.receive()
+                self.sock.connect((self.destAddress))
                 message = pickle.loads(pickledMsg)
 
                 print("Connection received!")
 
                 while True:
                     done = self.handleState(self.currentState)
-                    if not done:
+                    if done:
                         break
 
             except (KeyboardInterrupt, SystemExit):
@@ -81,7 +84,7 @@ class Server:
             return True
 
         if state == "pause":
-            self.pause()
+            self.pause(self.timestamp)
             return True
 
         if state == "teardown":
@@ -92,12 +95,9 @@ class Server:
     # Handles the setup call from the client
     def setup(self):
         dirName = os.listdir(os.getcwd())
-        self.send(dirName, self.destAddress) # send list of files in directory to client TODO: Will have to add the encoding
-        pickledMsg, self.destAddress = self.receive() # receives filename and if encoding is ok for client
+        self.send(dirName, self.destAddress) # send list of files in directory to client
+        pickledMsg, self.destAddress = self.receive() # receives filename
         fileName = pickle.loads(pickledMsg)
-        #todo: need to implement tag for encoding (maybe?)
-        #if ok:
-
         self.file = fileName
         self.currentState = "play"
 
@@ -107,48 +107,73 @@ class Server:
     def play(self):
 
         # The listening thread
-        thread = myThread()
-        thread.start()
+        listeningThread = myThread(self)
+        listeningThread.start()
 
         # TODO: Theoretically, this should stream a video file
         # and stop at an interrupt from the client
         # Note: this has not been tested and more than likely needs some work.
         # I believe video frames need to be converted to byte arrays
         # for processing on the client side
-        while not self.pause:
+        cap = cv2.VideoCapture()
+        cap.open(self.file)
+        framerate = (10.0/float(cap.get(cv2.CAP_PROP_FPS)))
+        self.send(framerate,self.destAddress)
+        while not self.paused and not self.teardownflag:
             # opens video file
-            cap = cv2.VideoCapture(self.file)
             ret, frame = cap.read()
-            timeStamp = cap.get(cv2.CAP_PROP_MSEC) # returns current timestamp in video
-            payload = "MJPG"
-            rtpPacket = RTP_Packet(payload, self.segn, timeStamp, self.ssrc)
-            rtpPacket.makeRTP_Packet()
-            completePacket = rtpPacket, frame # send RTP packet and video frame
-            self.send(completePacket, self.destAddress)
+            if frame == None:
+                break
+            timeStamp = cap.get(cv2.CAP_PROP_POS_MSEC) # returns current timestamp in video
+            if self.first:
+                self.first=False
+                self.timestamp=timeStamp
+            if(timeStamp>=self.timestamp):
+                self.send_rows(frame,timeStamp, framerate)
 
         print("play")
 
+    def send_rows(self, data, timestamp, framerate):
+        self.send( [ len(data), len(data[0]) ] , self.destAddress)
+        sleeprate = (framerate/float(len(data)))/100.0
+        for rown in range(0, len(data)):
+            rtpPacket = RTP_Packet.RTP_Packet("MJPG", self.seqn, timestamp, self.ssrc)
+            rtpPacket = rtpPacket.makeRTP_Pkt()
+            finalPacket = rtpPacket , rown , data[rown]
 
-     # function that will be spawned off a thread to listen for streaming interrupts from client
+            self.send(finalPacket,self.destAddress)
+        print("sent a frame")
+        self.send("FEND", self.destAddress)
+
+
+    # function that will spawn off a thread to listen for streaming interrupts from client
     def listening(self):
         pickledMsg, self.destAddress = self.receive()
         message = pickle.loads(pickledMsg) # message scheme = msgType, timestamp
         msgType = message[0]
         timeStamp = message[1]
         if msgType == "pause":
-            self.pause = True
+            self.pause(timeStamp)
             return
+        if msgType == "teardown":
+            self.teardown()
 
-    def pause(self):
+
+    def pause(self, timeStamp):
+        self.paused = True
+        self.timestamp=timeStamp #will begin sending from time paused
         print("pause")
 
     def teardown(self):
+        self.teardownflag = True
         print("teardown")
 
     def send(self, packet, address):
         pickledMsg = pickle.dumps(packet)
-        self.sock.sendto(pickledMsg, address)
+        self.sock.sendall(pickledMsg)
+        #self.sock.sendto(pickledMsg, address)
 
 if __name__ == "__main__":
     s = Server()
     s.start()
+
